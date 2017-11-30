@@ -71,7 +71,7 @@ sub get_current_worker_process_id
         #We have an array job
         if(defined($slurm_array_job_id) and defined($slurm_array_task_id))
         {
-            return "$slurm_array_jobid\[$slurm_array_task_id\]";
+            return "$slurm_array_jobid\_$slurm_array_task_id";
         }
         else
         {
@@ -85,22 +85,27 @@ sub get_current_worker_process_id
 }
 
 
-##_PV_NOT_TESTED_END
-
 sub count_pending_workers_by_rc_name {
     my ($self) = @_;
-
+    
+    #Needed becasue by default slurm reports all jobs
+    my $username = getpwuid($<);
+    
     my $jnp = $self->job_name_prefix();
-    my $cmd = "bjobs -w -J '${jnp}*' 2>/dev/null | grep PEND";  # "-u all" has been removed to ensure one user's PEND processes
-                                                                #   do not affect another user helping to run the same pipeline.
-
+    
+    #Prefix for job is not implemented in Slurm, so need to get all
+    #and parse it out
+    my $cmd = "squeue -u '${username}' -t PENDING -o '%j' 2>/dev/null"
+    
 #    warn "LSF::count_pending_workers_by_rc_name() running cmd:\n\t$cmd\n";
 
     my %pending_this_meadow_by_rc_name = ();
     my $total_pending_this_meadow = 0;
 
-    foreach my $line (qx/$cmd/) {
-        if($line=~/\b\Q$jnp\E(\S+)\-\d+(\[\d+\])?\b/) {
+    foreach my $line (qx/$cmd/)
+    {
+        if($line=~/\b\Q$jnp\E(\S+)\-\d+(\[\d+\])?\b/)
+        {
             $pending_this_meadow_by_rc_name{$1}++;
             $total_pending_this_meadow++;
         }

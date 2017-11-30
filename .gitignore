@@ -1,5 +1,6 @@
 !Build/
 .last_cover_stats
+.DS_Store
 /META.yml
 /META.json
 /MYMETA.*
