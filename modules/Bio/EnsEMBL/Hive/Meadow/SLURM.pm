@@ -47,10 +47,8 @@ our $VERSION = '3.0';       # Semantic version of the Meadow interface:
                             #   change the Minor version whenever the interface is extended, but compatibility is retained.
 
 
-sub name {  # also called to check for availability; assume LSF is available if LSF cluster_name can be established
+sub name {  # also called to check for availability; assume Slurm is available if Slurm cluster_name can be established
     my $cmd = "sacctmgr -n -p show clusters 2>/dev/null";
-
-#    warn "LSF::name() running cmd:\n\t$cmd\n";
 
     if(my $name = `$cmd`) {
         $name=~/^(.*?)\|.*/;
@@ -58,22 +56,30 @@ sub name {  # also called to check for availability; assume LSF is available if 
     }
 }
 
-##_PV_TESTED_END
 
-sub get_current_worker_process_id {
+sub get_current_worker_process_id
+{
     my ($self) = @_;
 
-    my $slurm_jobid    = $ENV{'SLURM_JOBID'};
-    my $slurm_jobindex = $ENV{'SLURM_ARRAY_TASK_ID'};
+    my $slurm_jobid           = $ENV{'SLURM_JOBID'};
+    my $slurm_array_job_id    = $ENV{'SLURM_ARRAY_JOB_ID'};
+    my $slurm_array_task_id   = $ENV{'SLURM_ARRAY_TASK_ID'};
 
-    if(defined($slurm_jobid) and defined($slurm_jobindex)) {
-        if($slurm_jobindex>0) {
-            $slurm_jobid = $ENV{'SLURM_ARRAY_JOB_ID'}; #Are these two separate IDs from the above?
-            return "$slurm_jobid_$slurm_jobindex";
-        } else {
+    #We have a slurm job
+    if(defined($slurm_jobid))
+    {
+        #We have an array job
+        if(defined($slurm_array_job_id) and defined($slurm_array_task_id))
+        {
+            return "$slurm_array_jobid\[$slurm_array_task_id\]";
+        }
+        else
+        {
             return $slurm_jobid;
         }
-    } else {
+    }
+    else
+    {
         die "Could not establish the process_id";
     }
 }
