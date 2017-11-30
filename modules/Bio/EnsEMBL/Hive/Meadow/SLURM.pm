@@ -95,7 +95,7 @@ sub count_pending_workers_by_rc_name {
     
     #Prefix for job is not implemented in Slurm, so need to get all
     #and parse it out
-    my $cmd = "squeue -u '${username}' -t PENDING -o '%j' 2>/dev/null"
+    my $cmd = "squeue -h -u ${username} -t PENDING -o '%j' 2>/dev/null"
     
 #    warn "LSF::count_pending_workers_by_rc_name() running cmd:\n\t$cmd\n";
 
@@ -123,10 +123,9 @@ sub count_running_workers {
 
     my $total_running_worker_count = 0;
 
-    foreach my $meadow_user (@$meadow_users_of_interest) {
-        my $cmd = "bjobs -w -J '${jnp}*' -u $meadow_user 2>/dev/null | grep RUN | wc -l";
-
-#        warn "LSF::count_running_workers() running cmd:\n\t$cmd\n";
+    foreach my $meadow_user (@$meadow_users_of_interest)
+    {
+        my $cmd = "squeue -h -u $meadow_user -t RUNNING -o '%j' 2>/dev/null | grep ^${jnp} | wc -l";
 
         my $meadow_user_worker_count = qx/$cmd/;
         $meadow_user_worker_count=~s/\s+//g;       # remove both leading and trailing spaces
