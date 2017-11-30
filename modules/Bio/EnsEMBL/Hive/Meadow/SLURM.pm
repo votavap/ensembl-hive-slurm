@@ -169,11 +169,13 @@ sub check_worker_is_alive_and_mine {
 
     my $wpid = $worker->process_id();
     my $this_user = $ENV{'USER'};
-    my $cmd = qq{bjobs $wpid -u $this_user 2>&1 | grep -v 'not found' | grep -v JOBID | grep -v EXIT};
+    my $cmd = "squeue -h -u $meadow_user --job=$wpid 2>&1 | grep -v 'Invalid job id specified' | grep -v 'Invalid user'";
 
 #    warn "LSF::check_worker_is_alive_and_mine() running cmd:\n\t$cmd\n";
 
     my $is_alive_and_mine = qx/$cmd/;
+    $is_alive_and_mine =~ s/^\s+|\s+$//g;
+    
     return $is_alive_and_mine;
 }
 
