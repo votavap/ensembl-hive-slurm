@@ -25,6 +25,10 @@
 
 =head1 CONTACT
 
+    For this module only (SLURM.pm)
+    - Petr Votava, votava.petr@gene.com
+    
+    For other Hive questions:
     Please subscribe to the Hive mailing list:  http://listserver.ebi.ac.uk/mailman/listinfo/ehive-users  to discuss Hive-related questions or to be notified of our updates
 
 =cut
