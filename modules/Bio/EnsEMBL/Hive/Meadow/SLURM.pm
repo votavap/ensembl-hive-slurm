@@ -183,11 +183,8 @@ sub check_worker_is_alive_and_mine {
 sub kill_worker {
     my ($self, $worker, $fast) = @_;
 
-    if ($fast) {
-        system('bkill', '-r', $worker->process_id());
-    } else {
-        system('bkill', $worker->process_id());
-    }
+    # -r option is not available in Slurm directly in scancel
+    system('scancel', $worker->process_id());
 }
 
 
