@@ -95,7 +95,7 @@ sub count_pending_workers_by_rc_name {
     
     #Prefix for job is not implemented in Slurm, so need to get all
     #and parse it out
-    my $cmd = "squeue -h -u ${username} -t PENDING -o '%j' 2>/dev/null"
+    my $cmd = "squeue --array -h -u ${username} -t PENDING -o '%j' 2>/dev/null"
     
 #    warn "LSF::count_pending_workers_by_rc_name() running cmd:\n\t$cmd\n";
 
@@ -125,7 +125,7 @@ sub count_running_workers {
 
     foreach my $meadow_user (@$meadow_users_of_interest)
     {
-        my $cmd = "squeue -h -u $meadow_user -t RUNNING -o '%j' 2>/dev/null | grep ^$jnp | wc -l";
+        my $cmd = "squeue --array -h -u $meadow_user -t RUNNING -o '%j' 2>/dev/null | grep ^$jnp | wc -l";
 
         my $meadow_user_worker_count = qx/$cmd/;
         $meadow_user_worker_count=~s/\s+//g;       # remove both leading and trailing spaces
@@ -148,7 +148,7 @@ sub status_of_all_our_workers { # returns a hashref
     foreach my $meadow_user (@$meadow_users_of_interest)
     {
         #PENDING, RUNNING, SUSPENDED, CANCELLED, COMPLETING, COMPLETED, CONFIGURING, FAILED, TIMEOUT, PREEMPTED, NODE_FAIL, REVOKED and SPECIAL_EXIT
-        my $cmd = "squeue -h -u $meadow_user -o '%i|%T' 2>/dev/null"
+        my $cmd = "squeue --array -h -u $meadow_user -o '%i|%T' 2>/dev/null"
 
         foreach my $line (`$cmd`) {
             my ($worker_pid, $status) = split(/\|/, $line);
@@ -342,27 +342,31 @@ sub submit_workers {
     my ($self, $worker_cmd, $required_worker_count, $iteration, $rc_name, $rc_specific_submission_cmd_args, $submit_log_subdir) = @_;
 
     my $job_array_common_name               = $self->job_array_common_name($rc_name, $iteration);
-    my $job_array_name_with_indices         = $job_array_common_name . (($required_worker_count > 1) ? "[1-${required_worker_count}]" : '');
+    my $job_array_spec                      = "1-${required_worker_count}";
     my $meadow_specific_submission_cmd_args = $self->config_get('SubmissionOptions');
 
     my ($submit_stdout_file, $submit_stderr_file);
 
     if($submit_log_subdir) {
-        $submit_stdout_file = $submit_log_subdir . "/log_${rc_name}_%J_%I.out";
-        $submit_stderr_file = $submit_log_subdir . "/log_${rc_name}_%J_%I.err";
+        $submit_stdout_file = $submit_log_subdir . "/log_${rc_name}_%A_%a.out";
+        $submit_stderr_file = $submit_log_subdir . "/log_${rc_name}_%A_%a.err";
     } else {
         $submit_stdout_file = '/dev/null';
         $submit_stderr_file = '/dev/null';
     }
 
-    $ENV{'LSB_STDOUT_DIRECT'} = 'y';  # unbuffer the output of the bsub command
-
-    my @cmd = ('bsub',
+    #No equivalent in sbatch, but can be accomplished with stdbuf -oL -eL
+    #$ENV{'LSB_STDOUT_DIRECT'} = 'y';  # unbuffer the output of the bsub command
+    
+    #Note: job arrays share the same name in slurm and are 0-based, but this may still work
+    my @cmd = ('sbatch',
         '-o', $submit_stdout_file,
         '-e', $submit_stderr_file,
-        '-J', $job_array_name_with_indices,
+        '-a', $job_array_spec,
+        '-j', $job_array_common_name,
         split_for_bash($rc_specific_submission_cmd_args),
         split_for_bash($meadow_specific_submission_cmd_args),
+        'stdbuf', '-oL', '-eL',
         $worker_cmd
     );
 
