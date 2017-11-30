@@ -125,7 +125,7 @@ sub count_running_workers {
 
     foreach my $meadow_user (@$meadow_users_of_interest)
     {
-        my $cmd = "squeue -h -u $meadow_user -t RUNNING -o '%j' 2>/dev/null | grep ^${jnp} | wc -l";
+        my $cmd = "squeue -h -u $meadow_user -t RUNNING -o '%j' 2>/dev/null | grep ^$jnp | wc -l";
 
         my $meadow_user_worker_count = qx/$cmd/;
         $meadow_user_worker_count=~s/\s+//g;       # remove both leading and trailing spaces
@@ -145,20 +145,17 @@ sub status_of_all_our_workers { # returns a hashref
 
     my %status_hash = ();
 
-    foreach my $meadow_user (@$meadow_users_of_interest) {
-        my $cmd = "bjobs -w -J '${jnp}*' -u $meadow_user 2>/dev/null";
-
-#        warn "LSF::status_of_all_our_workers() running cmd:\n\t$cmd\n";
+    foreach my $meadow_user (@$meadow_users_of_interest)
+    {
+        #PENDING, RUNNING, SUSPENDED, CANCELLED, COMPLETING, COMPLETED, CONFIGURING, FAILED, TIMEOUT, PREEMPTED, NODE_FAIL, REVOKED and SPECIAL_EXIT
+        my $cmd = "squeue -h -u $meadow_user -o '%i|%T' 2>/dev/null"
 
         foreach my $line (`$cmd`) {
-            my ($group_pid, $user, $status, $queue, $submission_host, $running_host, $job_name) = split(/\s+/, $line);
+            my ($worker_pid, $status) = split(/\|/, $line);
 
-            next if(($group_pid eq 'JOBID') or ($status eq 'DONE') or ($status eq 'EXIT'));
+            # TODO: not exactly sure what these are used for in the external code - this is based on the LSF status codes that were ignored
+            next if( ($status eq 'COMPLETED') or ($status eq 'FAILED'));
 
-            my $worker_pid = $group_pid;
-            if($job_name=~/(\[\d+\])$/ and $worker_pid!~/\[\d+\]$/) {   # account for the difference in LSF 9.1.1.1 vs LSF 9.1.2.0  bjobs' output
-                $worker_pid .= $1;
-            }
             $status_hash{$worker_pid} = $status;
         }
     }
