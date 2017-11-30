@@ -34,7 +34,7 @@
 =cut
 
 
-package Bio::EnsEMBL::Hive::Meadow::LSF;
+package Bio::EnsEMBL::Hive::Meadow::SLURM;
 
 use strict;
 use warnings;
@@ -100,8 +100,6 @@ sub count_pending_workers_by_rc_name {
     #Prefix for job is not implemented in Slurm, so need to get all
     #and parse it out
     my $cmd = "squeue --array -h -u ${username} -t PENDING -o '%j' 2>/dev/null"
-    
-#    warn "LSF::count_pending_workers_by_rc_name() running cmd:\n\t$cmd\n";
 
     my %pending_this_meadow_by_rc_name = ();
     my $total_pending_this_meadow = 0;
@@ -175,8 +173,6 @@ sub check_worker_is_alive_and_mine {
     my $this_user = $ENV{'USER'};
     my $cmd = "squeue -h -u $meadow_user --job=$wpid 2>&1 | grep -v 'Invalid job id specified' | grep -v 'Invalid user'";
 
-#    warn "LSF::check_worker_is_alive_and_mine() running cmd:\n\t$cmd\n";
-
     my $is_alive_and_mine = qx/$cmd/;
     $is_alive_and_mine =~ s/^\s+|\s+$//g;
     
@@ -217,128 +213,129 @@ sub _convert_to_datetime {      # a private subroutine that can recover missing 
 
 
 sub parse_report_source_line {
-    my ($self, $bacct_source_line) = @_;
-
-    warn "LSF::parse_report_source_line( \"$bacct_source_line\" )\n";
-
-    my %status_2_cod = (
-        'TERM_MEMLIMIT'     => 'MEMLIMIT',
-        'TERM_RUNLIMIT'     => 'RUNLIMIT',
-        'TERM_OWNER'        => 'KILLED_BY_USER',    # bkill     (wait until it dies)
-        'TERM_FORCE_OWNER'  => 'KILLED_BY_USER',    # bkill -r  (quick remove)
-    );
-
-    my %units_2_megs = (
-        'K' => 1.0/1024,
-        'M' => 1,
-        'G' => 1024,
-        'T' => 1024*1024,
-    );
-
-    local $/ = "------------------------------------------------------------------------------\n\n";
-    open(my $bacct_fh, $bacct_source_line);
-    my $record = <$bacct_fh>; # skip the header
-
+    #my ($self, $bacct_source_line) = @_;
+    #
+    #warn "LSF::parse_report_source_line( \"$bacct_source_line\" )\n";
+    #
+    #my %status_2_cod = (
+    #    'TERM_MEMLIMIT'     => 'MEMLIMIT',
+    #    'TERM_RUNLIMIT'     => 'RUNLIMIT',
+    #    'TERM_OWNER'        => 'KILLED_BY_USER',    # bkill     (wait until it dies)
+    #    'TERM_FORCE_OWNER'  => 'KILLED_BY_USER',    # bkill -r  (quick remove)
+    #);
+    #
+    #my %units_2_megs = (
+    #    'K' => 1.0/1024,
+    #    'M' => 1,
+    #    'G' => 1024,
+    #    'T' => 1024*1024,
+    #);
+    #
+    #local $/ = "------------------------------------------------------------------------------\n\n";
+    #open(my $bacct_fh, $bacct_source_line);
+    #my $record = <$bacct_fh>; # skip the header
+    #
     my %report_entry = ();
-
-    for my $record (<$bacct_fh>) {
-        chomp $record;
-
-        # warn "RECORD:\n$record";
-
-        my @lines = split(/\n/, $record);
-        if( my ($process_id) = $lines[0]=~/^Job <(\d+(?:\[\d+\])?)>/) {
-
-            my ($exit_status, $exception_status) = ('' x 2);
-            my ($when_died, $cause_of_death);
-            my (@keys, @values);
-            my $line_has_key_values = 0;
-            foreach (@lines) {
-                if( /^(\w+)\s+(\w+\s+\d+\s+\d+:\d+:\d+)(?:\s+(\d{4}))?:\s+Completed\s<(\w+)>(?:\.|;\s+(\w+))/ ) {
-                    $when_died      = _convert_to_datetime($1, $2, $3);
-                    $cause_of_death = $5 && $status_2_cod{$5};
-                    $exit_status = $4 . ($5 ? "/$5" : '');
-                }
-                elsif(/^\s*EXCEPTION STATUS:\s*(.*?)\s*$/) {
-                    $exception_status = $1;
-                    $exception_status =~s/\s+/;/g;
-                }
-                elsif(/^\s*CPU_T/) {
-                    @keys = split(/\s+/, ' '.$_);
-                    $line_has_key_values = 1;
-                }
-                elsif($line_has_key_values) {
-                    @values = split(/\s+/, ' '.$_);
-                    $line_has_key_values = 0;
-                }
-            }
-
-            my %usage;  @usage{@keys} = @values;
-
-            #warn join(', ', map {sprintf('%s=%s', $_, $usage{$_})} (sort keys %usage)), "\n";
-
-            my ($mem_in_units, $mem_unit)   = $usage{'MEM'}  =~ /^([\d\.]+)([KMGT])$/;
-            my ($swap_in_units, $swap_unit) = $usage{'SWAP'} =~ /^([\d\.]+)([KMGT])$/;
-
-            $report_entry{ $process_id } = {
-                    # entries for 'worker' table:
-                'when_died'         => $when_died,
-                'cause_of_death'    => $cause_of_death,
-
-                    # entries for 'worker_resource_usage' table:
-                'exit_status'       => $exit_status,
-                'exception_status'  => $exception_status,
-                'mem_megs'          => $mem_in_units  * $units_2_megs{$mem_unit},
-                'swap_megs'         => $swap_in_units * $units_2_megs{$swap_unit},
-                'pending_sec'       => $usage{'WAIT'},
-                'cpu_sec'           => $usage{'CPU_T'},
-                'lifespan_sec'      => $usage{'TURNAROUND'},
-            };
-        }
-    }
-    close $bacct_fh;
-    my $exit = $? >> 8;
-    die "Could not read from '$bacct_source_line'. Received the error $exit\n" if $exit;
-
+    #
+    #for my $record (<$bacct_fh>) {
+    #    chomp $record;
+    #
+    #    # warn "RECORD:\n$record";
+    #
+    #    my @lines = split(/\n/, $record);
+    #    if( my ($process_id) = $lines[0]=~/^Job <(\d+(?:\[\d+\])?)>/) {
+    #
+    #        my ($exit_status, $exception_status) = ('' x 2);
+    #        my ($when_died, $cause_of_death);
+    #        my (@keys, @values);
+    #        my $line_has_key_values = 0;
+    #        foreach (@lines) {
+    #            if( /^(\w+)\s+(\w+\s+\d+\s+\d+:\d+:\d+)(?:\s+(\d{4}))?:\s+Completed\s<(\w+)>(?:\.|;\s+(\w+))/ ) {
+    #                $when_died      = _convert_to_datetime($1, $2, $3);
+    #                $cause_of_death = $5 && $status_2_cod{$5};
+    #                $exit_status = $4 . ($5 ? "/$5" : '');
+    #            }
+    #            elsif(/^\s*EXCEPTION STATUS:\s*(.*?)\s*$/) {
+    #                $exception_status = $1;
+    #                $exception_status =~s/\s+/;/g;
+    #            }
+    #            elsif(/^\s*CPU_T/) {
+    #                @keys = split(/\s+/, ' '.$_);
+    #                $line_has_key_values = 1;
+    #            }
+    #            elsif($line_has_key_values) {
+    #                @values = split(/\s+/, ' '.$_);
+    #                $line_has_key_values = 0;
+    #            }
+    #        }
+    #
+    #        my %usage;  @usage{@keys} = @values;
+    #
+    #        #warn join(', ', map {sprintf('%s=%s', $_, $usage{$_})} (sort keys %usage)), "\n";
+    #
+    #        my ($mem_in_units, $mem_unit)   = $usage{'MEM'}  =~ /^([\d\.]+)([KMGT])$/;
+    #        my ($swap_in_units, $swap_unit) = $usage{'SWAP'} =~ /^([\d\.]+)([KMGT])$/;
+    #
+    #        $report_entry{ $process_id } = {
+    #                # entries for 'worker' table:
+    #            'when_died'         => $when_died,
+    #            'cause_of_death'    => $cause_of_death,
+    #
+    #                # entries for 'worker_resource_usage' table:
+    #            'exit_status'       => $exit_status,
+    #            'exception_status'  => $exception_status,
+    #            'mem_megs'          => $mem_in_units  * $units_2_megs{$mem_unit},
+    #            'swap_megs'         => $swap_in_units * $units_2_megs{$swap_unit},
+    #            'pending_sec'       => $usage{'WAIT'},
+    #            'cpu_sec'           => $usage{'CPU_T'},
+    #            'lifespan_sec'      => $usage{'TURNAROUND'},
+    #        };
+    #    }
+    #}
+    #close $bacct_fh;
+    #my $exit = $? >> 8;
+    #die "Could not read from '$bacct_source_line'. Received the error $exit\n" if $exit;
+    #
     return \%report_entry;
 }
 
 
 sub get_report_entries_for_process_ids {
-    my $self = shift @_;    # make sure we get if off the way before splicing
-
+#    my $self = shift @_;    # make sure we get if off the way before splicing
+#
     my %combined_report_entries = ();
-
-    while (my $pid_batch = join(' ', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline
-        my $cmd = "bacct -l $pid_batch |";
-
-#        warn "LSF::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
-
-        my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
-
-        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries);
-    }
-
+#
+#    while (my $pid_batch = join(' ', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline
+#        my $cmd = "bacct -l $pid_batch |";
+#
+##        warn "LSF::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
+#
+#        my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
+#
+#        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries);
+#    }
+#
     return \%combined_report_entries;
 }
 
 
 sub get_report_entries_for_time_interval {
-    my ($self, $from_time, $to_time, $username) = @_;
-
-    my $from_timepiece = Time::Piece->strptime($from_time, '%Y-%m-%d %H:%M:%S');
-    $from_time = $from_timepiece->strftime('%Y/%m/%d/%H:%M');
-
-    my $to_timepiece = Time::Piece->strptime($to_time, '%Y-%m-%d %H:%M:%S') + 2*ONE_MINUTE;
-    $to_time = $to_timepiece->strftime('%Y/%m/%d/%H:%M');
-
-    my $cmd = "bacct -l -C $from_time,$to_time ".($username ? "-u $username" : '') . ' |';
-
-#        warn "LSF::get_report_entries_for_time_interval() running cmd:\n\t$cmd\n";
-
-    my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
-
-    return $batch_of_report_entries;
+#    my ($self, $from_time, $to_time, $username) = @_;
+#
+#    my $from_timepiece = Time::Piece->strptime($from_time, '%Y-%m-%d %H:%M:%S');
+#    $from_time = $from_timepiece->strftime('%Y/%m/%d/%H:%M');
+#
+#    my $to_timepiece = Time::Piece->strptime($to_time, '%Y-%m-%d %H:%M:%S') + 2*ONE_MINUTE;
+#    $to_time = $to_timepiece->strftime('%Y/%m/%d/%H:%M');
+#
+#    my $cmd = "bacct -l -C $from_time,$to_time ".($username ? "-u $username" : '') . ' |';
+#
+##        warn "LSF::get_report_entries_for_time_interval() running cmd:\n\t$cmd\n";
+#
+#    my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
+#
+#    return $batch_of_report_entries;
+    return;
 }
 
 
