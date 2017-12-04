@@ -367,7 +367,6 @@ sub submit_workers {
         '-j', $job_array_common_name,
         split_for_bash($rc_specific_submission_cmd_args),
         split_for_bash($meadow_specific_submission_cmd_args),
-        'stdbuf', '-oL', '-eL',
         $worker_cmd
     );
 
