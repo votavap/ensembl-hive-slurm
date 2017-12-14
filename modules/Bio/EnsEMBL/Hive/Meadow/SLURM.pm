@@ -75,7 +75,7 @@ sub get_current_worker_process_id
         #We have an array job
         if(defined($slurm_array_job_id) and defined($slurm_array_task_id))
         {
-            return "$slurm_array_jobid\_$slurm_array_task_id";
+            return "$slurm_array_job_id\_$slurm_array_task_id";
         }
         else
         {
@@ -99,7 +99,7 @@ sub count_pending_workers_by_rc_name {
     
     #Prefix for job is not implemented in Slurm, so need to get all
     #and parse it out
-    my $cmd = "squeue --array -h -u ${username} -t PENDING -o '%j' 2>/dev/null"
+    my $cmd = "squeue --array -h -u ${username} -t PENDING -o '%j' 2>/dev/null";
 
     my %pending_this_meadow_by_rc_name = ();
     my $total_pending_this_meadow = 0;
@@ -150,7 +150,7 @@ sub status_of_all_our_workers { # returns a hashref
     foreach my $meadow_user (@$meadow_users_of_interest)
     {
         #PENDING, RUNNING, SUSPENDED, CANCELLED, COMPLETING, COMPLETED, CONFIGURING, FAILED, TIMEOUT, PREEMPTED, NODE_FAIL, REVOKED and SPECIAL_EXIT
-        my $cmd = "squeue --array -h -u $meadow_user -o '%i|%T' 2>/dev/null"
+        my $cmd = "squeue --array -h -u $meadow_user -o '%i|%T' 2>/dev/null";
 
         foreach my $line (`$cmd`) {
             my ($worker_pid, $status) = split(/\|/, $line);
@@ -171,7 +171,7 @@ sub check_worker_is_alive_and_mine {
 
     my $wpid = $worker->process_id();
     my $this_user = $ENV{'USER'};
-    my $cmd = "squeue -h -u $meadow_user --job=$wpid 2>&1 | grep -v 'Invalid job id specified' | grep -v 'Invalid user'";
+    my $cmd = "squeue -h -u $this_user --job=$wpid 2>&1 | grep -v 'Invalid job id specified' | grep -v 'Invalid user'";
 
     my $is_alive_and_mine = qx/$cmd/;
     $is_alive_and_mine =~ s/^\s+|\s+$//g;
