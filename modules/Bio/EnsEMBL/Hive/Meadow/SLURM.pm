@@ -364,7 +364,7 @@ sub submit_workers {
         '-o', $submit_stdout_file,
         '-e', $submit_stderr_file,
         '-a', $job_array_spec,
-        '-j', $job_array_common_name,
+        '-J', $job_array_common_name,
         split_for_bash($rc_specific_submission_cmd_args),
         split_for_bash($meadow_specific_submission_cmd_args),
         $worker_cmd
