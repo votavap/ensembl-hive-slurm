@@ -375,8 +375,6 @@ sub submit_workers {
     # Hack for sbatchd 
     my $tmp = File::Temp->new(  TEMPLATE => "ehive.$$.XXXX", UNLINK => 1, SUFFIX => '.sh', DIR => tempdir() );
     print $tmp join(" ", @cmd);
-    print "Filename is $tmp\n";
-    #$tmp->seek( 0, SEEK_END );
 
     system ("sh $tmp"); 
     #system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
