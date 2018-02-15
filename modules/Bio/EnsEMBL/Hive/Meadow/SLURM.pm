@@ -39,8 +39,8 @@ package Bio::EnsEMBL::Hive::Meadow::SLURM;
 use strict;
 use warnings;
 use Time::Piece;
-use Time::Seconds;
-
+use Time::Seconds; 
+use File::Temp qw(tempdir); 
 use Bio::EnsEMBL::Hive::Utils ('split_for_bash');
 
 use base ('Bio::EnsEMBL::Hive::Meadow');
@@ -364,15 +364,22 @@ sub submit_workers {
         '-o', $submit_stdout_file,
         '-e', $submit_stderr_file,
         '-a', $job_array_spec,
-        '-J', $job_array_common_name,
+        '-J', $job_array_common_name, 
         split_for_bash($rc_specific_submission_cmd_args),
         split_for_bash($meadow_specific_submission_cmd_args),
-        $worker_cmd
+        $worker_cmd,
     );
+ 
+    print "Executing [ ".$self->signature." ] \t\t".join(' ', @cmd)."\n";  
 
-    print "Executing [ ".$self->signature." ] \t\t".join(' ', @cmd)."\n";
+    # Hack for sbatchd 
+    my $tmp = File::Temp->new(  TEMPLATE => "ehive.$$.XXXX", UNLINK => 1, SUFFIX => '.sh', DIR => tempdir() );
+    print $tmp join(" ", @cmd);
+    print "Filename is $tmp\n";
+    #$tmp->seek( 0, SEEK_END );
 
-    system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax
+    system ("sh $tmp"); 
+    #system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
 }
 
 1;
