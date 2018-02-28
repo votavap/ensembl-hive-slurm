@@ -373,10 +373,11 @@ sub submit_workers {
     print "Executing [ ".$self->signature." ] \t\t".join(' ', @cmd)."\n";  
 
     # Hack for sbatchd 
-    my $tmp = File::Temp->new(  TEMPLATE => "ehive.$$.XXXX", UNLINK => 1, SUFFIX => '.sh', DIR => tempdir() );
+    my $tmp = File::Temp->new(  TEMPLATE => "ehive.$$.XXXX", UNLINK => 0, SUFFIX => '.sh', DIR => tempdir() );
     print $tmp join(" ", @cmd);
-
-    system ("sh $tmp"); 
+ 
+    print "Written file $tmp\n"; 
+    system ("sh $tmp") && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
     #system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
 }
 
