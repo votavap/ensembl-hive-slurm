@@ -214,6 +214,8 @@ sub _convert_to_datetime {      # a private subroutine that can recover missing 
 }
 
 
+# Works with Slurm 17.02.9 
+
 sub parse_report_source_line {
     my ($self, $bacct_source_line) = @_;
 
@@ -302,26 +304,31 @@ sub get_cause_of_death {
        $cod = "KILLED_BY_USER"; 
     }  
     return $cod; 
-} 
+}
+
 sub get_report_entries_for_process_ids {
     my $self = shift @_;    # make sure we get if off the way before splicing
 
     die("aaaarg"); 
     my %combined_report_entries = ();
 
-    while (my $pid_batch = join(' ', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline
-        my $cmd = "sacct -l $pid_batch |";
+    while (my $pid_batch = join(',', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline 
+
+        # sacct -j 19661,19662,19663
+        my $cmd = "sacct -p --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode -j $pid_batch  |" ;
 
         warn "SLURM::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
-#
-#        my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
-#
-#        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries);
+        my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
+
+        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries);
     }
 
     return \%combined_report_entries;
 }
 
+
+
+# Gets called from load_resource_usage.pl 
 
 sub get_report_entries_for_time_interval {
     my ($self, $from_time, $to_time, $username) = @_;
