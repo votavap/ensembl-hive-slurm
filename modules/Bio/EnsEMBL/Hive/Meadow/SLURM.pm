@@ -51,7 +51,7 @@ use Data::Dumper;
 use base ('Bio::EnsEMBL::Hive::Meadow');
 
 
-our $VERSION = '5.0';       # Semantic version of the Meadow interface:
+our $VERSION = '5.3';       # Semantic version of the Meadow interface:
                             #   change the Major version whenever an incompatible change is introduced,
                             #   change the Minor version whenever the interface is extended, but compatibility is retained.
 
