@@ -44,11 +44,14 @@ use Time::Seconds;
 use File::Temp qw(tempdir); 
 use Bio::EnsEMBL::Hive::Utils ('split_for_bash');
 use Time::Local ; 
+use Capture::Tiny ':all';
+use Scalar::Util qw(looks_like_number);
+use Data::Dumper; 
 
 use base ('Bio::EnsEMBL::Hive::Meadow');
 
 
-our $VERSION = '3.0';       # Semantic version of the Meadow interface:
+our $VERSION = '5.0';       # Semantic version of the Meadow interface:
                             #   change the Major version whenever an incompatible change is introduced,
                             #   change the Minor version whenever the interface is extended, but compatibility is retained.
 
@@ -141,30 +144,44 @@ sub count_running_workers {
 }
 
 
-sub status_of_all_our_workers { # returns a hashref
+
+
+sub status_of_all_our_workers  { # returns a hashref
     my $self                        = shift @_;
     my $meadow_users_of_interest    = shift @_ || [ 'all' ];
 
     my $jnp = $self->job_name_prefix();
 
-    my %status_hash = ();
+    #my %status_hash = ()
+    my @status_list = ();;
 
     foreach my $meadow_user (@$meadow_users_of_interest)
-    {
-        #PENDING, RUNNING, SUSPENDED, CANCELLED, COMPLETING, COMPLETED, CONFIGURING, FAILED, TIMEOUT, PREEMPTED, NODE_FAIL, REVOKED and SPECIAL_EXIT
-        my $cmd = "squeue --array -h -u $meadow_user -o '%i|%T' 2>/dev/null";
+    { 
 
-        foreach my $line (`$cmd`) {
-            my ($worker_pid, $status) = split(/\|/, $line);
+        # PENDING, RUNNING, SUSPENDED, CANCELLED, COMPLETING, COMPLETED, CONFIGURING, FAILED, 
+        # TIMEOUT, PREEMPTED, NODE_FAIL, REVOKED and SPECIAL_EXIT 
+       
+        # jhv : this returns the job_id. Is this job ID alwas suffixed with _1 ?  
+        my $cmd = "squeue --array -h -u $meadow_user -o '%i|%T|%u' 2>/dev/null";
 
-            # TODO: not exactly sure what these are used for in the external code - this is based on the LSF status codes that were ignored
+        foreach my $line (`$cmd`) {  
+            chomp($line); # Remove the newline from the squeue command otherwise we can't identify job correctly
+
+            my ($worker_pid, $status, $user ) = split(/\|/, $line); 
+
+
+            # TODO: not exactly sure what these are used for in the external code - 
+            # this is based on the LSF status codes that were ignored
+            
             next if( ($status eq 'COMPLETED') or ($status eq 'FAILED'));
 
-            $status_hash{$worker_pid} = $status;
+            #$status_hash{$worker_pid} = $status; 
+ 	    push @status_list, [ $worker_pid, $user, $status ];             
         }
     }
 
-    return \%status_hash;
+    #return \%status_hash;
+    return \@status_list;
 }
 
 
@@ -214,12 +231,15 @@ sub _convert_to_datetime {      # a private subroutine that can recover missing 
 }
 
 
+
+
+
 # Works with Slurm 17.02.9 
 
 sub parse_report_source_line {
     my ($self, $bacct_source_line) = @_;
 
-    warn "$bacct_source_line\n"; 
+    warn "\n\n$bacct_source_line\n\n"; 
     
 
     warn "SLURM::parse_report_source_line( \"$bacct_source_line\" )\n";
@@ -309,10 +329,11 @@ sub get_cause_of_death {
 sub get_report_entries_for_process_ids {
     my $self = shift @_;    # make sure we get if off the way before splicing
 
-    die("aaaarg"); 
     my %combined_report_entries = ();
 
     while (my $pid_batch = join(',', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline 
+     #$pid_batch =~ s/\[//g;
+     #$pid_batch =~ s/\]//g;
 
         # sacct -j 19661,19662,19663
         my $cmd = "sacct -p --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode -j $pid_batch  |" ;
@@ -350,10 +371,20 @@ sub get_report_entries_for_time_interval {
 }
 
 
-sub submit_workers {
+
+# jhv: this is called by the beekeeper to submit jobs .... 
+
+sub submit_workers_return_meadow_pids {
     my ($self, $worker_cmd, $required_worker_count, $iteration, $rc_name, $rc_specific_submission_cmd_args, $submit_log_subdir) = @_;
 
-    my $job_array_common_name               = $self->job_array_common_name($rc_name, $iteration);
+    my $job_array_common_name               = $self->job_array_common_name($rc_name, $iteration);  
+    #
+    # Flag if we should submit a job array or not 
+    # This is important for later in terms of what SLURM job ID we return.
+    # (so the job can be reidentfied between SLURM scheduler and Database
+    #
+    my $array_required                      = $required_worker_count > 1; 
+
     my $job_array_spec                      = "1-${required_worker_count}";
     my $meadow_specific_submission_cmd_args = $self->config_get('SubmissionOptions');
 
@@ -370,26 +401,93 @@ sub submit_workers {
     #No equivalent in sbatch, but can be accomplished with stdbuf -oL -eL
     #$ENV{'LSB_STDOUT_DIRECT'} = 'y';  # unbuffer the output of the bsub command
     
-    #Note: job arrays share the same name in slurm and are 0-based, but this may still work
-    my @cmd = ('sbatch',
-        '-o', $submit_stdout_file,
-        '-e', $submit_stderr_file,
-        '-a', $job_array_spec,
-        '-J', $job_array_common_name, 
-        split_for_bash($rc_specific_submission_cmd_args),
-        split_for_bash($meadow_specific_submission_cmd_args),
-        $worker_cmd,
-    );
- 
-    print "Executing [ ".$self->signature." ] \t\t".join(' ', @cmd)."\n";  
+    #Note: job arrays share the same name in slurm and are 0-based, but this may still work  
+    my @cmd;
+    if ( $array_required eq "1" ) { 
+      # We have to submit a job array - this will change the job ids in slurm to <job_id>_ARRAY  
+      
+       @cmd = ('sbatch',
+                '-o', $submit_stdout_file,
+                 '-e', $submit_stderr_file,
+                 '-a', $job_array_spec,      # inform SLURM we submit an ARRAY 
+                                             # jobs submitted with 'sbatch -a ' get different ids back when executing 
+                                             # 'squeue --array -h -u <user> -o '%i|%T|%u|%A' later  
+                 '-J', $job_array_common_name, 
+                 split_for_bash($rc_specific_submission_cmd_args),
+                 split_for_bash($meadow_specific_submission_cmd_args),
+                 $worker_cmd,
+	      );
+    } else {  
+       @cmd = ('sbatch',
+                '-o', $submit_stdout_file,
+                '-e', $submit_stderr_file,
+                '-J', $job_array_common_name, 
+                split_for_bash($rc_specific_submission_cmd_args),
+                split_for_bash($meadow_specific_submission_cmd_args),
+                $worker_cmd,
+	      );
+
+    }   
+
+    print "\n\nExecuting [ ".$self->signature." ] \t\t".join(' ', @cmd)."\n\n";  
 
     # Hack for sbatchd 
-    my $tmp = File::Temp->new(  TEMPLATE => "ehive.$$.XXXX", UNLINK => 0, SUFFIX => '.sh', DIR => tempdir() );
-    print $tmp join(" ", @cmd);
- 
-    print "Written file $tmp\n"; 
-    system ("sh $tmp") && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
-    #system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
+    # Write command to file 
+    my $tmp = File::Temp->new(  TEMPLATE => "slurm_job__submission.$$.XXXX", UNLINK => 1, SUFFIX => '.sh', DIR => tempdir() );
+    print $tmp join(" ", @cmd); 
+
+
+
+    # execute written file + capture STDOUT and EXIT CODE 
+    my  ($stdout, $stderr, $exit) = capture {
+       system ("sh $tmp") && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
+    };
+
+    if ( $exit ne 0 ) {  
+      die("SLURM: job submission failed with exit status $exit: : $stdout $stderr"); 
+    }   
+
+    unless ( $stdout =~ m/Submitted batch job (\d+)/ ) {   
+      die("ERROR: SLURM job submission returned Incorrect return value, so the SLURM JOB ID can't be parsed correctly."); 
+    }  
+
+    my @out = split /\s/,$stdout; # STDOUT is like": "Submitted batch job 2683413" 
+    my $slurm_job_id = $out[-1];   
+
+     print join(" ", @out)."\n";
+
+    if (looks_like_number($slurm_job_id)) { 
+
+       my $return_value;   
+
+       # Modify the return values depending on the submission type: single job vs job array
+       # as these have different indexes.  
+       #
+       if ( $array_required ) {   
+           print "SLURM: Job ARRAY submitted\n"; 
+          # We need to return all Job IDS with suffix <job>_1 <job>_2 if we submit 
+          # job arrays - so they are correctly written to DB + on SLURM scheduler. 
+          $return_value = [ map { $slurm_job_id.'_'.$_.'' } (1..$required_worker_count) ]; 
+       }else { 
+
+         print "SLURM: SINGLE JOB submitted\n";  
+         # 
+         # We submitted only a single job - so theoretically we do not have to add the <job_id>_1 suffix 
+         # However - if you submit a single job to SLURM, you will still get the ID with index back later: 
+         # sbatch bla.sh 
+         #
+         $return_value = [ $slurm_job_id ]; 
+       } 
+          
+       print "SLURM: Submitted job ids: " . join(" ", @$return_value)."\n";  
+
+       return $return_value; 
+       #return ($array_required ? [ map { $slurm_job_id.'['.$_.']' } (1..$required_worker_count) ] : [ $slurm_job_id]); 
+       #return ($array_required ? [ map { $slurm_job_id.'['.$_.']' } (1..$required_worker_count) ] : [ $slurm_job_id]); 
+    } else {
+       die("ERROR: SLURM Job submission failure : it looks like SURM returned a non-numerical value /job-id returned in $tmp: $stdout\n"); 
+    }
+    #system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax   
 }
 
 1;
