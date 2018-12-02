@@ -6,7 +6,11 @@
 
 =head1 DESCRIPTION
 
-    This is the 'SLURM' implementation of Meadow
+    This is the 'SLURM' implementation of an EnsEMBL eHIVE  Meadow.
+
+=head1 Compatibility 
+   
+    Module version 5.3 is compatible with SLURM version 17.11.11 
 
 =head1 LICENSE
 
@@ -27,8 +31,9 @@
 =head1 CONTACT
 
     For this module only (SLURM.pm)
-    - Petr Votava, votava.petr@gene.com
-    
+    - Jan Vogel -  you find me.  
+   
+ 
     For other Hive questions:
     Please subscribe to the Hive mailing list:  http://listserver.ebi.ac.uk/mailman/listinfo/ehive-users  to discuss Hive-related questions or to be notified of our updates
 
@@ -49,6 +54,10 @@ use Scalar::Util qw(looks_like_number);
 use Data::Dumper; 
 
 use base ('Bio::EnsEMBL::Hive::Meadow');
+
+
+# Module version 5.3 is compatible with Slurm 17.11.11 
+
 
 
 our $VERSION = '5.3';       # Semantic version of the Meadow interface:
