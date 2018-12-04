@@ -2,7 +2,6 @@ ensembl-hive-slurm
 ==================
 
 
-
 SLURM Meadow for Ensembl-Hive
 -------
 
@@ -15,9 +14,11 @@ Version numbering and compatibility
 -----------------------------------
 
 This repository is versioned the same way as eHive itself
-* `version/2.4` is a stable branch and _only_ receive bugfixes.
+* `tag/v3.0` works with eHive v80, eHive Meadow v3.0 and SLURM 17.11.11 
+* `tag/v5.3` works with eHive v90, eHive Meadow v5.3 and SLURM 17.11.11 
+
 * `master` is the stable branch branch
-* `develop` is - guess what - the development branch branch
+* `develop` is - guess what - the development branch branch.
 
 Contributors
 ------------
