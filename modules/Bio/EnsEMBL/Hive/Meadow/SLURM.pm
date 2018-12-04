@@ -56,8 +56,9 @@ use Data::Dumper;
 use base ('Bio::EnsEMBL::Hive::Meadow');
 
 
-# Module version 5.3 is compatible with Slurm 17.11.11 
-
+# Module version with eHive version v80
+# Module version 5.1 is compatible with Slurm 17.11.11 and eHive v94
+# Module version 5.3 is compatible with Slurm 17.11.11 and eHive v94
 
 
 our $VERSION = '5.3';       # Semantic version of the Meadow interface:
