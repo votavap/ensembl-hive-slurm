@@ -1,4 +1,4 @@
-Template
+ensembl-hive-slurm
 ========
 
 $project will solve your problem of where to start with documentation,
