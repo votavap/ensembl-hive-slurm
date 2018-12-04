@@ -254,13 +254,6 @@ sub parse_report_source_line {
     warn "SLURM::parse_report_source_line( \"$bacct_source_line\" )\n";
    
     
-    my %units_2_megs = (
-        'K' => 1.0/1024,
-        'M' => 1,
-        'G' => 1024,
-        'T' => 1024*1024,
-    );
-    
    # local $/ = "------------------------------------------------------------------------------\n\n";
     open(my $bacct_fh, $bacct_source_line) || die "Cant open $bacct_source_line\n"; 
     my $record = <$bacct_fh>; # skip the header
@@ -276,7 +269,7 @@ sub parse_report_source_line {
         my $job_name   = $lines[0];   # JobName - for explanation please look at sacct command 
         my $job_id     = $lines[1];   # JobID 
         my $exit_code  = $lines[2];   # ExitCode 
-        my $mem_used   = $lines[3];   # MaxRSS 
+        my $mem_used   = $lines[3];   # MaxRSS in units=M 
         my $reserved_time = $lines[4];   # Reserved / pending time ... 
         my $max_disk_read = $lines[5];   # MaxDiskRead 
         my $total_cpu     = $lines[6];   # CPUTimeRAW
@@ -303,8 +296,8 @@ sub parse_report_source_line {
                  # entries for 'worker_resource_usage' table:
                  'exit_status'       => $exit_code, 
                  'exception_status'  => $exception_status,
-                 'mem_megs'          => $mem_used, # mem_in_units  * $units_2_megs{$mem_unit},
-                 'swap_megs'         => $max_disk_read, # swap_in_units * $units_2_megs{$swap_unit},
+                 'mem_megs'          => $mem_used, # mem_in_units, returnd by sacct with --units=M  
+                 'swap_megs'         => $max_disk_read, # swap_in_units
                  'pending_sec'       => $reserved_time, 
                  'cpu_sec'           => $total_cpu ,
                  'lifespan_sec'      => $elapsed , 
@@ -344,8 +337,9 @@ sub get_report_entries_for_process_ids {
      #$pid_batch =~ s/\[//g;
      #$pid_batch =~ s/\]//g;
 
-        # sacct -j 19661,19662,19663
-        my $cmd = "sacct -p --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode -j $pid_batch  |" ;
+        # sacct -j 19661,19662,19663 
+        #  --units=M Display values in specified unit type. [KMGTP] 
+        my $cmd = "sacct -p --units=M --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode -j $pid_batch  |" ;
 
         warn "SLURM::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
         my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
@@ -370,7 +364,7 @@ sub get_report_entries_for_time_interval {
     $to_time = $to_timepiece->strftime('%Y-%m-%dT%H:%M');
 
     # sacct -s CA,CD,CG,F -S 2018-02-27T16:48 -E 2018-02-27T16:50
-    my $cmd = "sacct -p -s CA,CD,CG,F  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode     -S $from_time -E $to_time ".($username ? "-u $username" : '') . ' |';
+    my $cmd = "sacct -p --units=M -s CA,CD,CG,F  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode     -S $from_time -E $to_time ".($username ? "-u $username" : '') . ' |';
 
     warn "SLURM::get_report_entries_for_time_interval() running cmd:\n\t$cmd\n";
 
