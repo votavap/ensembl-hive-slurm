@@ -10,7 +10,7 @@
 
 =head1 Compatibility 
    
-    Module version 5.3 is compatible with SLURM version 17.11.11 
+    Module version 5.3.1 is compatible with SLURM version 17.11.11 
 
 =head1 LICENSE
 
