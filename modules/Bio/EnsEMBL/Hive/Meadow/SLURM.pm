@@ -282,8 +282,7 @@ sub parse_report_source_line {
 
         next unless $job_name =~ m/batch/; 
 
-        $mem_used =~ s/K$//; 
-        $mem_used /= 1024; # convert to kb to meg 
+        $mem_used =~ s/M$//; 
 
      
         my $cause_of_death = get_cause_of_death($state) ; 
