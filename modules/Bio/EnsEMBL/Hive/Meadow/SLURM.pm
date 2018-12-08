@@ -10,7 +10,9 @@
 
 =head1 Compatibility 
    
-    Module version 5.3.1 is compatible with SLURM version 17.11.11 
+
+    Module version 5.3 is compatible with SLURM version 17.11.11 and eHive Meadow v5.3
+
 
 =head1 LICENSE
 
@@ -282,7 +284,7 @@ sub parse_report_source_line {
 
         next unless $job_name =~ m/batch/; 
 
-        $mem_used =~ s/M$//; 
+        $mem_used =~ s/M$//; # results are reported in Megabytes
 
      
         my $cause_of_death = get_cause_of_death($state) ; 
