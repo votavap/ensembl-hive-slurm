@@ -277,7 +277,7 @@ sub parse_report_source_line {
         my $max_disk_read = $lines[5];   # MaxDiskRead 
         my $total_cpu     = $lines[6];   # CPUTimeRAW
         my $elapsed       = $lines[7];   # ElapsedRAW 
-        my $state         = $lines[8];   # State 
+        my $state         = $lines[8];   # State OUT_OF_MEMORY, FAILED etc. 
         my $exception_status = $lines[9];   # DerivedExitCode  
 
          $job_id =~ s/\.batch//; 
@@ -319,9 +319,11 @@ sub get_cause_of_death {
 
     my $cod = "UNKNOWN"; 
     my %status_2_cod = (
-       'TERM_MEMLIMIT'     => 'MEMLIMIT',
+       #'OUT_OF_MEMORY'     => 'MEMLIMIT',
+       'FAILED'            => 'FAILED',
+       'OUT_OF_MEMORY'     => 'OUT_OF_MEMORY',
        'TERM_RUNLIMIT'     => 'RUNLIMIT',
-       'CANCELLED'          => 'KILLED_BY_USER',    # bkill     (wait until it dies)
+       'CANCELLED'         => 'KILLED_BY_USER',    # bkill     (wait until it dies)
        'TERM_FORCE_OWNER'  => 'KILLED_BY_USER',    # bkill -r  (quick remove)
     ); 
     if ( $state =~ m/CANCELLED/ ) {  
@@ -388,9 +390,7 @@ sub submit_workers_return_meadow_pids {
     # This is important for later in terms of what SLURM job ID we return.
     # (so the job can be reidentfied between SLURM scheduler and Database
     #
-    my $array_required                      = $required_worker_count > 1; 
 
-    my $job_array_spec                      = "1-${required_worker_count}";
     my $meadow_specific_submission_cmd_args = $self->config_get('SubmissionOptions');
 
     my ($submit_stdout_file, $submit_stderr_file);
@@ -405,12 +405,20 @@ sub submit_workers_return_meadow_pids {
 
     #No equivalent in sbatch, but can be accomplished with stdbuf -oL -eL
     #$ENV{'LSB_STDOUT_DIRECT'} = 'y';  # unbuffer the output of the bsub command
-    
-    #Note: job arrays share the same name in slurm and are 0-based, but this may still work  
-    my @cmd;
+   
+    # 
+    # Note: job arrays share the same name in slurm and are 0-based, but this may still work   
+    #
+    my @cmd;  
+
+    my $array_required                      = $required_worker_count > 1; 
+
     if ( $array_required eq "1" ) { 
+      #
       # We have to submit a job array - this will change the job ids in slurm to <job_id>_ARRAY  
+      #
       
+       my $job_array_spec                      = "1-${required_worker_count}";
        @cmd = ('sbatch',
                 '-o', $submit_stdout_file,
                  '-e', $submit_stderr_file,
@@ -487,12 +495,9 @@ sub submit_workers_return_meadow_pids {
        print "SLURM: Submitted job ids: " . join(" ", @$return_value)."\n";  
 
        return $return_value; 
-       #return ($array_required ? [ map { $slurm_job_id.'['.$_.']' } (1..$required_worker_count) ] : [ $slurm_job_id]); 
-       #return ($array_required ? [ map { $slurm_job_id.'['.$_.']' } (1..$required_worker_count) ] : [ $slurm_job_id]); 
     } else {
        die("ERROR: SLURM Job submission failure : it looks like SURM returned a non-numerical value /job-id returned in $tmp: $stdout\n"); 
     }
-    #system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax   
 }
 
 1;
