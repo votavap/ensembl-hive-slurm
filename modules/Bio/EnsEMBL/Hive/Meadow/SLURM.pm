@@ -244,9 +244,18 @@ sub _convert_to_datetime {      # a private subroutine that can recover missing 
 
 
 
+=head2
+
+Arg [1]    :
+Example    :
+Description:  Works with Slurm 17.02.9 
+Returntype :
+Exceptions :
+Caller     : Gets called by Slurm.pm to parse the output of the 'sacct' command.
 
 
-# Works with Slurm 17.02.9 
+=cut
+
 
 sub parse_report_source_line {
     my ($self, $bacct_source_line) = @_;
@@ -317,19 +326,18 @@ sub parse_report_source_line {
 sub get_cause_of_death { 
    my ($state) = @_;   
 
-    my $cod = "UNKNOWN"; 
     my %status_2_cod = (
-       #'OUT_OF_MEMORY'     => 'MEMLIMIT',
        'FAILED'            => 'FAILED',
        'OUT_OF_MEMORY'     => 'OUT_OF_MEMORY',
        'TERM_RUNLIMIT'     => 'RUNLIMIT',
-       'CANCELLED'         => 'KILLED_BY_USER',    # bkill     (wait until it dies)
-       'TERM_FORCE_OWNER'  => 'KILLED_BY_USER',    # bkill -r  (quick remove)
-    ); 
-    if ( $state =~ m/CANCELLED/ ) {  
-       $cod = "KILLED_BY_USER"; 
-    }  
-    return $cod; 
+       'CANCELLED'         => 'KILLED_BY_USER',  
+       'TERM_FORCE_OWNER'  => 'KILLED_BY_USER',  
+    );
+
+    if ( exists $status_2_cod{$state} ) { 
+      return $status_2_cod{$state}; 
+    } 
+    return $state; 
 }
 
 sub get_report_entries_for_process_ids {
@@ -356,7 +364,20 @@ sub get_report_entries_for_process_ids {
 
 
 
-# Gets called from load_resource_usage.pl 
+=head2
+
+Arg [1]    : From timestamp 
+Arg [2]    : To timestamp 
+Arg [3]    : Username  
+
+Example    : $self->get_report_entries_for_time_interval($start,end,'user'); 
+Description:
+Returntype :
+Exceptions :
+Caller     : This routine gets called by the load_resource_usage.pl script.
+
+
+=cut
 
 sub get_report_entries_for_time_interval {
     my ($self, $from_time, $to_time, $username) = @_;
