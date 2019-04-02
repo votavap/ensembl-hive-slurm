@@ -16,10 +16,7 @@
 
 =head1 LICENSE
 
-    Copyright [1999-2015] Wellcome Trust Sanger Institute and the EMBL-European Bioinformatics Institute
-    Copyright [2016-2017] EMBL-European Bioinformatics Institute
-    Copyright [2017] Genentech, Inc.
-    Copyright [2018] Genentech, Inc.
+    Copyright [2019] Genentech, Inc.
 
     Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
     You may obtain a copy of the License at
@@ -33,7 +30,7 @@
 =head1 CONTACT
 
     For this module only (SLURM.pm)
-    - Jan Vogel -  you find me.  
+    - Jan-Hinnerk Vogel -  you find me.  
    
  
     For other Hive questions:
@@ -54,13 +51,13 @@ use Time::Local ;
 use Capture::Tiny ':all';
 use Scalar::Util qw(looks_like_number);
 use Data::Dumper; 
-
 use base ('Bio::EnsEMBL::Hive::Meadow');
 
 
 # Module version with eHive version v80
 # Module version 5.1 is compatible with Slurm 17.11.11 and eHive v94
 # Module version 5.3 is compatible with Slurm 17.11.11 and eHive v94
+# Module version 5.3.1 is compatible with Slurm 17.11.11 and eHive v94
 
 
 our $VERSION = '5.3';       # Semantic version of the Meadow interface:
@@ -251,7 +248,8 @@ Example    :
 Description:  Works with Slurm 17.02.9 
 Returntype :
 Exceptions :
-Caller     : Gets called by Slurm.pm to parse the output of the 'sacct' command.
+Caller     : Gets called by Slurm.pm to parse the output of the 'sacct' command. 
+             Gets also called by load_resource_usage.pl 
 
 
 =cut
@@ -295,7 +293,6 @@ sub parse_report_source_line {
 
         $mem_used =~ s/M$//; # results are reported in Megabytes
 
-     
         my $cause_of_death = get_cause_of_death($state) ; 
         $exception_status  = $cause_of_death ; 
     
@@ -318,7 +315,6 @@ sub parse_report_source_line {
     close $bacct_fh;
     my $exit = $? >> 8;
     die "Could not read from '$bacct_source_line'. Received the error $exit\n" if $exit;
-    
     return \%report_entry;
 }
 
@@ -356,7 +352,7 @@ sub get_report_entries_for_process_ids {
         warn "SLURM::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
         my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
 
-        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries);
+        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries); 
     }
 
     return \%combined_report_entries;
@@ -389,7 +385,7 @@ sub get_report_entries_for_time_interval {
     $to_time = $to_timepiece->strftime('%Y-%m-%dT%H:%M');
 
     # sacct -s CA,CD,CG,F -S 2018-02-27T16:48 -E 2018-02-27T16:50
-    my $cmd = "sacct -p --units=M -s CA,CD,CG,F  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode     -S $from_time -E $to_time ".($username ? "-u $username" : '') . ' |';
+    my $cmd = "sacct -p --units=M -s CA,CD,CG,F,OOM  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode     -S $from_time -E $to_time ".($username ? "-u $username" : '') . ' |';
 
     warn "SLURM::get_report_entries_for_time_interval() running cmd:\n\t$cmd\n";
 
@@ -468,7 +464,7 @@ sub submit_workers_return_meadow_pids {
     # Hack for sbatchd 
     # Write command to file 
     my $tmp = File::Temp->new(  TEMPLATE => "slurm_job__submission.$$.XXXX", UNLINK => 1, SUFFIX => '.sh', DIR => tempdir() );
-    print $tmp join(" ", @cmd); 
+    print $tmp join(" ", @cmd);
 
 
 
@@ -488,7 +484,6 @@ sub submit_workers_return_meadow_pids {
     my @out = split /\s/,$stdout; # STDOUT is like": "Submitted batch job 2683413" 
     my $slurm_job_id = $out[-1];   
 
-     print join(" ", @out)."\n";
 
     if (looks_like_number($slurm_job_id)) { 
 
