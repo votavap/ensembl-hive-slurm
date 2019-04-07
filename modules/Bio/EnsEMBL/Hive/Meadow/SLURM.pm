@@ -6,7 +6,11 @@
 
 =head1 DESCRIPTION
 
-    This is the 'SLURM' implementation of an EnsEMBL eHIVE  Meadow.
+    This is the 'SLURM' implementation of an EnsEMBL eHIVE  Meadow. It wraps the following SLURM commands and 
+    parses their output: 
+     - sacctmgr
+     - sbatch 
+     - squeue
 
 =head1 Compatibility 
    
