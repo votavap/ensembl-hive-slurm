@@ -49,7 +49,7 @@ use warnings;
 use Time::Piece;
 use Time::Seconds; 
 use File::Temp qw(tempdir); 
-use Bio::EnsEMBL::Hive::Utils ('split_for_bash');
+use Bio::EnsEMBL::Hive::Utils ('split_for_bash','timeout');
 use Time::Local ; 
 use Capture::Tiny ':all';
 use Scalar::Util qw(looks_like_number);
@@ -71,10 +71,16 @@ our $VERSION = '5.3';       # Semantic version of the Meadow interface:
 sub name {  # also called to check for availability; assume Slurm is available if Slurm cluster_name can be established
     my $cmd = "sacctmgr -n -p show clusters 2>/dev/null";
 
-    if(my $name = `$cmd`) {
-        $name=~/^(.*?)\|.*/;
-        return $1;
-    }
+    my $return_value;
+
+    my ($stdout, $stderr, @result) = Capture::Tiny::tee(sub {
+        $return_value = timeout( sub {system($cmd)}, 300 );
+    });
+
+    die sprintf("ERROR !!! Could not run '%s', got %s\nSTDERR %s\n", $cmd, $return_value, $stderr) if $return_value ;
+
+    my @val = split /\|/, $stdout;
+    return $val[0];
 }
 
 
