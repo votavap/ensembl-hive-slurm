@@ -68,48 +68,39 @@ our $VERSION = '5.3';       # Semantic version of the Meadow interface:
                             #   change the Minor version whenever the interface is extended, but compatibility is retained.
 
 
+
+
+=head name
+
+   Args:       : None
+   Description : Determine the SLURM cluster_name, if an SLURM  meadow is available. 
+   Exception   : Dies if command to retrieve the cluster name fails.
+   Returntype  : String
+
+=cut
+
+
 sub name {  # also called to check for availability; assume Slurm is available if Slurm cluster_name can be established
-    my $cmd = "sacctmgr -n -p show clusters 2>/dev/null";
+    my $cmd = "sacctmgr -n -p show clusters";
 
-    my $return_value;
-
-    my ($stdout, $stderr, @result) = Capture::Tiny::tee(sub {
-        $return_value = timeout( sub {system($cmd)}, 300 );
-    });
-
-    die sprintf("ERROR !!! Could not run '%s', got %s\nSTDERR %s\n", $cmd, $return_value, $stderr) if $return_value ;
-
-    my @val = split /\|/, $stdout;
-    return $val[0];
+    my @lines = @{ execute_command($cmd) };
+    my @val = split /\|/, $lines[0]; 
+    my $cluster_name = $val[0]; 
+    print "Cluster name: $cluster_name\n"; 
+    return $cluster_name; 
 }
 
 
-sub get_current_worker_process_id
-{
-    my ($self) = @_;
 
-    my $slurm_jobid           = $ENV{'SLURM_JOBID'};
-    my $slurm_array_job_id    = $ENV{'SLURM_ARRAY_JOB_ID'};
-    my $slurm_array_task_id   = $ENV{'SLURM_ARRAY_TASK_ID'};
 
-    #We have a slurm job
-    if(defined($slurm_jobid))
-    {
-        #We have an array job
-        if(defined($slurm_array_job_id) and defined($slurm_array_task_id))
-        {
-            return "$slurm_array_job_id\_$slurm_array_task_id";
-        }
-        else
-        {
-            return $slurm_jobid;
-        }
-    }
-    else
-    {
-        die "Could not establish the process_id";
-    }
-}
+=head count_pending_workers_by_rc_name 
+
+   Args:       : None
+   Description : Counts the number of pending workers of the user 
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : String
+
+=cut 
 
 
 sub count_pending_workers_by_rc_name {
@@ -119,16 +110,17 @@ sub count_pending_workers_by_rc_name {
     my $username = getpwuid($<);
     
     my $jnp = $self->job_name_prefix();
-    
+    die($jnp); 
     #Prefix for job is not implemented in Slurm, so need to get all
     #and parse it out
-    my $cmd = "squeue --array -h -u ${username} -t PENDING -o '%j' 2>/dev/null";
+    my $cmd = "squeue --array -h -u ${username} -t PENDING -o '%j' "; 
 
+    my $lines = execute_command($cmd); 
+     
     my %pending_this_meadow_by_rc_name = ();
     my $total_pending_this_meadow = 0;
 
-    foreach my $line (qx/$cmd/)
-    {
+    foreach my $line (@$lines) {
         if($line=~/\b\Q$jnp\E(\S+)\-\d+(\[\d+\])?\b/)
         {
             $pending_this_meadow_by_rc_name{$1}++;
@@ -140,6 +132,15 @@ sub count_pending_workers_by_rc_name {
 }
 
 
+=head count_running_workers 
+
+   Args:       : None
+   Description : Counts the number of pending workers of the user 
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : String
+
+=cut 
+
 sub count_running_workers {
     my $self                        = shift @_;
     my $meadow_users_of_interest    = shift @_ || [ 'all' ];
@@ -150,9 +151,10 @@ sub count_running_workers {
 
     foreach my $meadow_user (@$meadow_users_of_interest)
     {
-        my $cmd = "squeue --array -h -u $meadow_user -t RUNNING -o '%j' 2>/dev/null | grep ^$jnp | wc -l";
+        my $cmd = "squeue --array -h -u $meadow_user -t RUNNING -o '%j' | grep ^$jnp | wc -l";
+        my $lines = execute_command($cmd); 
 
-        my $meadow_user_worker_count = qx/$cmd/;
+        my $meadow_user_worker_count = $lines->[0]; 
         $meadow_user_worker_count=~s/\s+//g;       # remove both leading and trailing spaces
 
         $total_running_worker_count += $meadow_user_worker_count;
@@ -162,16 +164,23 @@ sub count_running_workers {
 }
 
 
+=head status_of_all_our_workers()
+
+   Args:       : None
+   Description : Counts the number of pending workers of the user 
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : Array [ worker_pid, user, status ] 
+
+=cut 
 
 
-sub status_of_all_our_workers  { # returns a hashref
+sub status_of_all_our_workers  { 
     my $self                        = shift @_;
     my $meadow_users_of_interest    = shift @_ || [ 'all' ];
 
     my $jnp = $self->job_name_prefix();
 
-    #my %status_hash = ()
-    my @status_list = ();;
+    my @status_list = ();
 
     foreach my $meadow_user (@$meadow_users_of_interest)
     { 
@@ -180,9 +189,11 @@ sub status_of_all_our_workers  { # returns a hashref
         # TIMEOUT, PREEMPTED, NODE_FAIL, REVOKED and SPECIAL_EXIT 
        
         # jhv : this returns the job_id. Is this job ID alwas suffixed with _1 ?  
-        my $cmd = "squeue --array -h -u $meadow_user -o '%i|%T|%u' 2>/dev/null";
+        my $cmd = "squeue --array -h -u $meadow_user -o '%i|%T|%u' "; 
 
-        foreach my $line (`$cmd`) {  
+        my $lines = execute_command($cmd); 
+
+        foreach my $line (@$lines){ 
             chomp($line); # Remove the newline from the squeue command otherwise we can't identify job correctly
 
             my ($worker_pid, $status, $user ) = split(/\|/, $line); 
@@ -190,101 +201,159 @@ sub status_of_all_our_workers  { # returns a hashref
 
             # TODO: not exactly sure what these are used for in the external code - 
             # this is based on the LSF status codes that were ignored
-            
+            # Do not count COMPLETED or FAILED jobs. 
             next if( ($status eq 'COMPLETED') or ($status eq 'FAILED'));
 
-            #$status_hash{$worker_pid} = $status; 
  	    push @status_list, [ $worker_pid, $user, $status ];             
         }
     }
-
-    #return \%status_hash;
     return \@status_list;
 }
+
+
+=head check_worker_is_alive_and_mine() 
+
+   Args:       : Bio::EnsEMBL::Hive::Worker 
+   Description : Checks if a worker is registered under the current logged in user. 
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : String (value of squeue command )
+
+=cut 
+
 
 
 sub check_worker_is_alive_and_mine {
     my ($self, $worker) = @_;
 
     my $wpid = $worker->process_id();
-    my $this_user = $ENV{'USER'};
-    my $cmd = "squeue -h -u $this_user --job=$wpid 2>&1 | grep -v 'Invalid job id specified' | grep -v 'Invalid user'";
+    my $this_user = $ENV{'USER'}; 
 
-    my $is_alive_and_mine = qx/$cmd/;
+    my $cmd = "squeue -h -u $this_user --job=$wpid 2>&1 | grep -v 'Invalid job id specified' | grep -v 'Invalid user'";
+    my $lines = execute_command($cmd);  
+
+    my $is_alive_and_mine = $lines->[0]; 
     $is_alive_and_mine =~ s/^\s+|\s+$//g;
     
     return $is_alive_and_mine;
 }
 
 
-sub kill_worker {
-    my ($self, $worker, $fast) = @_;
+=head kill_worker() 
 
-    # -r option is not available in Slurm directly in scancel
-    system('scancel', $worker->process_id());
+   Args:       : None
+   Description : Counts the number of pending workers of the user 
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : Array [ worker_pid, user, status ] 
+
+=cut 
+
+sub kill_worker {
+    my ($self, $worker, $fast) = @_; 
+
+    my $cmd = 'scancel ' . $worker->process_id();
+    my $lines = execute_command($cmd); 
 }
 
 
-sub _convert_to_datetime {      # a private subroutine that can recover missing year from an incomplete date and then transforms it into SQL's datetime for storage
-    my ($weekday, $yearless, $real_year) = @_;
 
-    if($real_year) {
-        my $datetime = Time::Piece->strptime("$yearless $real_year", '%b %d %T %Y');
-        return $datetime->date.' '.$datetime->hms;
-    } else {
-        my $curr_year = Time::Piece->new->year();
 
-        my $years_back = 0;
-        while ($years_back < 28) {  # The Gregorian calendar repeats every 28 years
-            my $candidate_year = $curr_year - $years_back;
-            my $datetime = Time::Piece->strptime("$yearless $candidate_year", '%b %d %T %Y');
-            if($datetime->wdayname eq $weekday) {
-                return $datetime->date.' '.$datetime->hms;
-            }
-            $years_back++;
-        }
+=head get_report_entries_for_process_ids() 
+
+   Args:       : None
+   Description : Gathers stats for a specific set of workers via sacct. 
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : Complex.
+
+=cut  
+
+sub get_report_entries_for_process_ids {
+    my $self = shift @_;    # make sure we get if off the way before splicing
+
+    my %combined_report_entries = ();
+
+    while (my $pid_batch = join(',', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline 
+     #$pid_batch =~ s/\[//g;
+     #$pid_batch =~ s/\]//g;
+
+        # sacct -j 19661,19662,19663 
+        #  --units=M Display values in specified unit type. [KMGTP] 
+        my $cmd = "sacct -p --units=M --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode -j $pid_batch  |" ;
+
+        warn "SLURM::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
+        my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
+
+        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries);
     }
 
-    return; # could not guess the year
+    return \%combined_report_entries;
 }
 
 
 
+=head get_report_entries_for_process_ids() 
+
+   Args:       : None
+   Description : Gathers statistics for jobs for a time interval by running sacct.
+   Exception   : Dies if command to retrieve stats fails. 
+   Returntype  : Complex. 
+   Caller      : Gets called from load_resource_usage.pl  
+
+=cut  
+
+sub get_report_entries_for_time_interval {
+    my ($self, $from_time, $to_time, $username) = @_;
+
+    my $from_timepiece = Time::Piece->strptime($from_time, '%Y-%m-%d %H:%M:%S');
+    $from_time = $from_timepiece->strftime('%Y-%m-%dT%H:%M');
+
+    my $to_timepiece = Time::Piece->strptime($to_time, '%Y-%m-%d %H:%M:%S') + 2*ONE_MINUTE;
+    $to_time = $to_timepiece->strftime('%Y-%m-%dT%H:%M');
+
+    # sacct -s CA,CD,CG,F -S 2018-02-27T16:48 -E 2018-02-27T16:50
+    my $cmd = "sacct -p --units=M -s CA,CD,CG,F  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode     -S $from_time -E $to_time ".($username ? "-u $username" : '') . ' |';
+
+    warn "SLURM::get_report_entries_for_time_interval() running cmd:\n\t$cmd\n";
+
+    my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
+
+    return $batch_of_report_entries;
+}
 
 
-# Works with Slurm 17.02.9 
+=head parse_report_source_line() 
+
+   Args:       : Command ( sacct ) 
+   Comment     : # Works with Slurm 17.02.9 
+   Description : Parses the resource Counts the number of pending workers of the user 
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : Href 
+
+=cut 
 
 sub parse_report_source_line {
     my ($self, $bacct_source_line) = @_;
 
-    warn "\n\n$bacct_source_line\n\n"; 
-    
-
-    warn "SLURM::parse_report_source_line( \"$bacct_source_line\" )\n";
+    my $lines = execute_command($bacct_source_line); 
    
-    
-   # local $/ = "------------------------------------------------------------------------------\n\n";
-    open(my $bacct_fh, $bacct_source_line) || die "Cant open $bacct_source_line\n"; 
-    my $record = <$bacct_fh>; # skip the header
-    $record = <$bacct_fh>; # skip the header
-    
     my %report_entry = ();
    
-    for my $record (<$bacct_fh>) {
-        chomp $record;
+    for my $row (@$lines) { 
+        chomp $row;
 
-        my @lines = split(/\|/, $record);     
+        my @col = split(/\|/, $row);     
 
-        my $job_name   = $lines[0];   # JobName - for explanation please look at sacct command 
-        my $job_id     = $lines[1];   # JobID 
-        my $exit_code  = $lines[2];   # ExitCode 
-        my $mem_used   = $lines[3];   # MaxRSS in units=M 
-        my $reserved_time = $lines[4];   # Reserved / pending time ... 
-        my $max_disk_read = $lines[5];   # MaxDiskRead 
-        my $total_cpu     = $lines[6];   # CPUTimeRAW
-        my $elapsed       = $lines[7];   # ElapsedRAW 
-        my $state         = $lines[8];   # State 
-        my $exception_status = $lines[9];   # DerivedExitCode  
+        my $job_name   = $col[0];   # JobName - for explanation please look at sacct command 
+        my $job_id     = $col[1];   # JobID 
+        my $exit_code  = $col[2];   # ExitCode 
+        my $mem_used   = $col[3];   # MaxRSS in units=M 
+        my $reserved_time = $col[4];   # Reserved / pending time ... 
+        my $max_disk_read = $col[5];   # MaxDiskRead 
+        my $total_cpu     = $col[6];   # CPUTimeRAW
+        my $elapsed       = $col[7];   # ElapsedRAW 
+        my $state         = $col[8];   # State 
+        my $exception_status = $col[9];   # DerivedExitCode  
+
+        print "DEBUG: $job_id\t$state\n";
 
          $job_id =~ s/\.batch//; 
 
@@ -311,79 +380,19 @@ sub parse_report_source_line {
                  'lifespan_sec'      => $elapsed , 
             };
     } 
-
-    close $bacct_fh;
-    my $exit = $? >> 8;
-    die "Could not read from '$bacct_source_line'. Received the error $exit\n" if $exit;
-    
     return \%report_entry;
 }
 
-    
-sub get_cause_of_death { 
-   my ($state) = @_;   
 
-    my $cod = "UNKNOWN"; 
-    my %status_2_cod = (
-       'TERM_MEMLIMIT'     => 'MEMLIMIT',
-       'TERM_RUNLIMIT'     => 'RUNLIMIT',
-       'CANCELLED'          => 'KILLED_BY_USER',    # bkill     (wait until it dies)
-       'TERM_FORCE_OWNER'  => 'KILLED_BY_USER',    # bkill -r  (quick remove)
-    ); 
-    if ( $state =~ m/CANCELLED/ ) {  
-       $cod = "KILLED_BY_USER"; 
-    }  
-    return $cod; 
-}
+=head submit_workers_return_meadow_pids() 
 
-sub get_report_entries_for_process_ids {
-    my $self = shift @_;    # make sure we get if off the way before splicing
+   Args:       : Command ( sacct ) 
+   Comment     : # Works with Slurm 17.02.9 
+   Description : Runs sbatch to submit workers to SLURM  
+   Exception   : Dies if command to retrieve pending workers fails. 
+   Returntype  : Href 
 
-    my %combined_report_entries = ();
-
-    while (my $pid_batch = join(',', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline 
-     #$pid_batch =~ s/\[//g;
-     #$pid_batch =~ s/\]//g;
-
-        # sacct -j 19661,19662,19663 
-        #  --units=M Display values in specified unit type. [KMGTP] 
-        my $cmd = "sacct -p --units=M --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode -j $pid_batch  |" ;
-
-        warn "SLURM::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
-        my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
-
-        %combined_report_entries = (%combined_report_entries, %$batch_of_report_entries);
-    }
-
-    return \%combined_report_entries;
-}
-
-
-
-# Gets called from load_resource_usage.pl 
-
-sub get_report_entries_for_time_interval {
-    my ($self, $from_time, $to_time, $username) = @_;
-
-    my $from_timepiece = Time::Piece->strptime($from_time, '%Y-%m-%d %H:%M:%S');
-    $from_time = $from_timepiece->strftime('%Y-%m-%dT%H:%M');
-
-    my $to_timepiece = Time::Piece->strptime($to_time, '%Y-%m-%d %H:%M:%S') + 2*ONE_MINUTE;
-    $to_time = $to_timepiece->strftime('%Y-%m-%dT%H:%M');
-
-    # sacct -s CA,CD,CG,F -S 2018-02-27T16:48 -E 2018-02-27T16:50
-    my $cmd = "sacct -p --units=M -s CA,CD,CG,F  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode     -S $from_time -E $to_time ".($username ? "-u $username" : '') . ' |';
-
-    warn "SLURM::get_report_entries_for_time_interval() running cmd:\n\t$cmd\n";
-
-    my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
-
-    return $batch_of_report_entries;
-}
-
-
-
-# jhv: this is called by the beekeeper to submit jobs .... 
+=cut 
 
 sub submit_workers_return_meadow_pids {
     my ($self, $worker_cmd, $required_worker_count, $iteration, $rc_name, $rc_specific_submission_cmd_args, $submit_log_subdir) = @_;
@@ -448,7 +457,6 @@ sub submit_workers_return_meadow_pids {
     print $tmp join(" ", @cmd); 
 
 
-
     # execute written file + capture STDOUT and EXIT CODE 
     my  ($stdout, $stderr, $exit) = capture {
        system ("sh $tmp") && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax  
@@ -475,13 +483,11 @@ sub submit_workers_return_meadow_pids {
        # as these have different indexes.  
        #
        if ( $array_required ) {   
-           print "SLURM: Job ARRAY submitted\n"; 
           # We need to return all Job IDS with suffix <job>_1 <job>_2 if we submit 
           # job arrays - so they are correctly written to DB + on SLURM scheduler. 
           $return_value = [ map { $slurm_job_id.'_'.$_.'' } (1..$required_worker_count) ]; 
        }else { 
 
-         print "SLURM: SINGLE JOB submitted\n";  
          # 
          # We submitted only a single job - so theoretically we do not have to add the <job_id>_1 suffix 
          # However - if you submit a single job to SLURM, you will still get the ID with index back later: 
@@ -500,5 +506,80 @@ sub submit_workers_return_meadow_pids {
     }
     #system( @cmd ) && die "Could not submit job(s): $!, $?";  # let's abort the beekeeper and let the user check the syntax   
 }
+
+
+
+sub execute_command {
+  my ($cmd) = @_;
+
+  print "Executing : $cmd\n";
+  my $return_value;
+
+  my ($stdout, $stderr, @result) = Capture::Tiny::capture (sub {
+      $return_value = timeout( sub {system($cmd)}, 300 );
+  });
+
+  if ($return_value) {
+     die sprintf("ERROR !!! Could not run '%s', got %s\nSTDERR %s\n", $cmd, $return_value, $stderr) ;
+  }  
+  my @lines = split /\n/, $stdout; 
+  return \@lines;
+}
+
+
+
+sub get_current_worker_process_id {
+    my ($self) = @_;
+
+    my $slurm_jobid           = $ENV{'SLURM_JOBID'};
+    my $slurm_array_job_id    = $ENV{'SLURM_ARRAY_JOB_ID'};
+    my $slurm_array_task_id   = $ENV{'SLURM_ARRAY_TASK_ID'};
+
+    #We have a slurm job
+    if(defined($slurm_jobid))
+    {
+        #We have an array job
+        if(defined($slurm_array_job_id) and defined($slurm_array_task_id))
+        {
+            return "$slurm_array_job_id\_$slurm_array_task_id";
+        }
+        else
+        {
+            return $slurm_jobid;
+        }
+    }
+    else
+    {
+        die "Could not establish the process_id";
+    }
+} 
+
+
+=head get_cause_of_death() 
+
+   Args:       : Slurm job state 
+   Description : Translates a SLURM job state into an eHive cause-of-death 
+   Exception   : None 
+   Returntype  : String
+
+=cut 
+
+
+
+sub get_cause_of_death { 
+   my ($state) = @_;   
+
+    my %slurm_status_2_cod = (
+       'FAILED'            => 'CONTAMINATED',
+       'OUT_OF_MEMORY'     => 'MEMLIMIT', 
+       'CANCELLED'         => 'KILLED_BY_USER',  
+    );
+    my $cod = $slurm_status_2_cod{$state} ;  
+    unless ( $cod ) { 
+       $cod = "UNKNOWN" ; 
+    }  
+    return $cod; 
+}
+
 
 1;
