@@ -372,7 +372,8 @@ sub parse_report_source_line {
         # get previously parsed status ( slurm returns 3 rows of statuses which are different ! ) 
         my $cause_of_death = get_cause_of_death($job_id_to_state{$job_id}) ;  
         $exception_status  = $cause_of_death ; 
-    
+   
+ 
           $report_entry{ $job_id } = {
              # entries for 'worker' table:
                 'when_died'         => undef, 
