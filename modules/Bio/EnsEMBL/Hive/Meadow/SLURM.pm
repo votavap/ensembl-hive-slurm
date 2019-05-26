@@ -110,7 +110,7 @@ sub count_pending_workers_by_rc_name {
     my $username = getpwuid($<);
     
     my $jnp = $self->job_name_prefix();
-    die($jnp); 
+
     #Prefix for job is not implemented in Slurm, so need to get all
     #and parse it out
     my $cmd = "squeue --array -h -u ${username} -t PENDING -o '%j' "; 
@@ -178,7 +178,7 @@ sub status_of_all_our_workers  {
     my $self                        = shift @_;
     my $meadow_users_of_interest    = shift @_ || [ 'all' ];
 
-    my $jnp = $self->job_name_prefix();
+    my $jnp = $self->job_name_prefix(); # reederj_ehive_rosaprd_278-Hive-
 
     my @status_list = ();
 
@@ -331,12 +331,15 @@ sub get_report_entries_for_time_interval {
 =cut 
 
 sub parse_report_source_line {
-    my ($self, $bacct_source_line) = @_;
+    my ($self, $bacct_source_line) = @_; 
+
+    my $jnp = $self->job_name_prefix(); # reederj_ehive_rosaprd_278-Hive-
 
     my $lines = execute_command($bacct_source_line); 
-   
+
     my %report_entry = ();
-   
+    my %job_id_to_state ;  
+
     for my $row (@$lines) { 
         chomp $row;
 
@@ -355,14 +358,19 @@ sub parse_report_source_line {
 
         print "DEBUG: $job_id\t$state\n";
 
-         $job_id =~ s/\.batch//; 
+
+        # parse the correct state
+        if ($job_name=~ m/$jnp/) {  
+          $job_id_to_state{$job_id} = $state; 
+        } 
 
         next unless $job_name =~ m/batch/; 
+        $job_id =~ s/\.batch//;   
 
         $mem_used =~ s/M$//; # results are reported in Megabytes
 
-     
-        my $cause_of_death = get_cause_of_death($state) ; 
+        # get previously parsed status ( slurm returns 3 rows of statuses which are different ! ) 
+        my $cause_of_death = get_cause_of_death($job_id_to_state{$job_id}) ;  
         $exception_status  = $cause_of_death ; 
     
           $report_entry{ $job_id } = {
@@ -570,6 +578,7 @@ sub get_cause_of_death {
    my ($state) = @_;   
 
     my %slurm_status_2_cod = (
+       'TIMEOUT'           => 'RUNLIMIT',
        'FAILED'            => 'CONTAMINATED',
        'OUT_OF_MEMORY'     => 'MEMLIMIT', 
        'CANCELLED'         => 'KILLED_BY_USER',  
