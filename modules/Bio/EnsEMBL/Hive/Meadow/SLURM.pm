@@ -80,14 +80,17 @@ our $VERSION = '5.3';       # Semantic version of the Meadow interface:
 =cut
 
 
-sub name {  # also called to check for availability; assume Slurm is available if Slurm cluster_name can be established
-    my $cmd = "sacctmgr -n -p show clusters";
-
-    my @lines = @{ execute_command($cmd) };
-    my @val = split /\|/, $lines[0]; 
-    my $cluster_name = $val[0]; 
-    print "Cluster name: $cluster_name\n"; 
-    return $cluster_name; 
+sub name {  # also called to check for availability; assume Slurm is available if Slurm cluster_name can be established 
+    # debugging debugging janni  
+    
+    #my $cmd = "sacctmgr -n -p show clusters";
+    #my @lines = @{ execute_command($cmd) };
+    #my @val = split /\|/, $lines[0]; 
+    #my $cluster_name = $val[0]; 
+    #print "Cluster name: $cluster_name\n"; 
+    #return $cluster_name;  
+    
+    return "slurm_cluster"; 
 }
 
 
@@ -271,13 +274,13 @@ sub get_report_entries_for_process_ids {
 
     my %combined_report_entries = ();
 
-    while (my $pid_batch = join(',', map { "'$_'" } splice(@_, 0, 20))) {  # can't fit too many pids on one shell cmdline 
+    while (my $pid_batch = join(',', map { "'$_'" } splice(@_, 0, 1))) {  # can't fit too many pids on one shell cmdline 
      #$pid_batch =~ s/\[//g;
      #$pid_batch =~ s/\]//g;
 
         # sacct -j 19661,19662,19663 
         #  --units=M Display values in specified unit type. [KMGTP] 
-        my $cmd = "sacct -p --units=M --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode -j $pid_batch  " ;
+        my $cmd = "sacct -p --units=M --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode,End -j $pid_batch  " ;
 
         warn "SLURM::get_report_entries_for_process_ids() running cmd:\n\t$cmd\n";
         my $batch_of_report_entries = $self->parse_report_source_line( $cmd );
@@ -309,8 +312,9 @@ sub get_report_entries_for_time_interval {
     my $to_timepiece = Time::Piece->strptime($to_time, '%Y-%m-%d %H:%M:%S') + 2*ONE_MINUTE;
     $to_time = $to_timepiece->strftime('%Y-%m-%dT%H:%M');
 
-    # sacct -s CA,CD,CG,F -S 2018-02-27T16:48 -E 2018-02-27T16:50
-    my $cmd = "sacct -p --units=M -s CA,CD,CG,F  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode     -S $from_time -E $to_time ".($username ? "-u $username" : '') ;
+    # sacct -s CA,CD,CG,F -S 2018-02-27T16:48 -E 2018-02-27T16:50 
+    # 2019-12-01 changing the sacct parameters as "CG" is not supported anymore - and the command fails fatallly 
+    my $cmd = "sacct -p --units=M -s CA,CD,F,OOM  --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode,End    -S $from_time -E $to_time ".($username ? "-u $username" : '') ;
 
     warn "SLURM::get_report_entries_for_time_interval() running cmd:\n\t$cmd\n";
 
@@ -338,56 +342,97 @@ sub parse_report_source_line {
     my $lines = execute_command($bacct_source_line); 
 
     my %report_entry = ();
-    my %job_id_to_state ;  
 
     for my $row (@$lines) { 
         chomp $row;
+
+        # Do not parse header line. 
+        if ($row =~ m/^JobName/ ){  
+          next;
+        }
+
 
         my @col = split(/\|/, $row);     
 
         my $job_name   = $col[0];   # JobName - for explanation please look at sacct command 
         my $job_id     = $col[1];   # JobID 
         my $exit_code  = $col[2];   # ExitCode 
-        my $mem_used   = $col[3];   # MaxRSS in units=M 
-        my $reserved_time = $col[4];   # Reserved / pending time ... 
-        my $max_disk_read = $col[5];   # MaxDiskRead 
-        my $total_cpu     = $col[6];   # CPUTimeRAW
-        my $elapsed       = $col[7];   # ElapsedRAW 
-        my $state         = $col[8];   # State 
-        my $exception_status = $col[9];   # DerivedExitCode  
-
+        my $mem_used   = $col[3] || 0 ;   # MaxRSS in units=M, set in batch line  
+        my $reserved_time = $col[4] || 0 ;   # Reserved / pending time ... 
+        my $max_disk_read = $col[5] || 0;   # MaxDiskRead = swap in megabytes, set in batch line 
+        my $total_cpu     = $col[6] || 0;   # CPUTimeRAW
+        my $elapsed       = $col[7] || 0;   # ElapsedRAW 
+        my $state         = $col[8] || 'UNKOWN' ;        # State : CANCELLED or CANCELLED BY 12334
+        my $exception_status = $col[9];     # DerivedExitCode, not used   
+        my $when_died        = $col[10] || undef; 
+     
         print "DEBUG: $job_id\t$state\n";
+        print "DEBUG: $row\n";
 
 
-        # parse the correct state
+        # parse the correct state. 
+        # On 2021-09-07 the state reportred in the first line was reported as 'CANCELLED by 2004512'  which rquires that we 
+        # change our code to now parse the second line for the state: 
+        # wuk26_ehive_quasarprd_6-Hive-100x_coverage-7655_1|10666490|0:0||00:00:00||336|12|CANCELLED by 2004512|0:0|  
+        #
         if ($job_name=~ m/$jnp/) {  
-          $job_id_to_state{$job_id} = $state; 
+
+         # Populate inital values. Some of these values ( exitcode, maxRss, maxDiskread, cputimeRaw and (converted) state are 
+         # re-set if sacct returns a 2nd 'batch' line with more details.
+
+          $report_entry{ $job_id } = {
+             # entries for 'worker' table:
+                'when_died'         => $when_died, 
+                'cause_of_death'    => $state,
+
+                 # entries for 'worker_resource_usage' table:
+                 'exit_status'       => $exit_code, 
+                 'exception_status'  => $state,
+                 'mem_megs'          => $mem_used,        # mem_in_units, returnd by sacct with --units=M , stored as float
+                 'swap_megs'         => $max_disk_read,   # swap_in_units, stored as float
+                 'pending_sec'       => convert_time_to_seconds($reserved_time),
+                 'cpu_sec'           => $total_cpu ,
+                 'lifespan_sec'      => $elapsed , 
+            };
         } 
 
-        next unless $job_name =~ m/batch/; 
-        $job_id =~ s/\.batch//;   
+        #  Code below is only executed if sacct returns the additional jobid.batch line: 
+	# sacct -p --units=M --format JobName,JobID,ExitCode,MaxRSS,Reserved,MaxDiskRead,CPUTimeRAW,ElapsedRAW,State,DerivedExitCode,End -j '10668505'
+	# JobName|JobID|ExitCode|MaxRSS|Reserved|MaxDiskRead|CPUTimeRAW|ElapsedRaw|State|DerivedExitCode|
+	# wuk26_ehive_quasarprd_6-Hive-100x_coverage-7660_1|10668505|0:0||00:00:12||336|12|CANCELLED by 2004512|0:0|
+	# batch|10668505.batch|0:15|54.53M||1.94M|364|13|CANCELLED||     <------------ parse this line now !
+        # extern|10668505.extern|0:0|0||0.00M|336|12|COMPLETED||
 
-        $mem_used =~ s/M$//; # results are reported in Megabytes
+        # The 'batch' only exists if the job was in running state and contains slightly different data: 
+        # - the memory used for the job ( data not reported in first line ) 
+        # - the swap memory ( not reported in fist line ) 
+        # - the exit status CANCELLED ( different exit status in first line : CANCELLED by 2004512)   
+       
+        if ( $job_name =~ m/batch/ ) { 
 
-        # get previously parsed status ( slurm returns 3 rows of statuses which are different ! ) 
-        my $cause_of_death = get_cause_of_death($job_id_to_state{$job_id}) ;  
-        $exception_status  = $cause_of_death ; 
-   
+          $job_id =~ s/\.batch//;   
+
+          $mem_used =~ s/M//;      # results are reported in Megabytes 422.0M and stored as float in DB
+          $max_disk_read =~ s/M//; # results are reported in Megabytes 
+
+          my $cause_of_death = get_cause_of_death($state); 
+
+          print "CAuse of thead: $cause_of_death ($state)\n"; 
  
           $report_entry{ $job_id } = {
              # entries for 'worker' table:
-                'when_died'         => undef, 
                 'cause_of_death'    => $cause_of_death, 
 
                  # entries for 'worker_resource_usage' table:
                  'exit_status'       => $exit_code, 
-                 'exception_status'  => $exception_status,
-                 'mem_megs'          => $mem_used, # mem_in_units, returnd by sacct with --units=M  
-                 'swap_megs'         => $max_disk_read, # swap_in_units
-                 'pending_sec'       => $reserved_time, 
+                 'exception_status'  => $cause_of_death , 
+                 'mem_megs'          => $mem_used,        # mem_in_units, returnd by sacct with --units=M , stored as float
+                 'swap_megs'         => $max_disk_read,   # swap_in_units, stored as float
                  'cpu_sec'           => $total_cpu ,
                  'lifespan_sec'      => $elapsed , 
             };
+        } 
+
     } 
     return \%report_entry;
 }
@@ -521,12 +566,21 @@ sub submit_workers_return_meadow_pids {
 sub execute_command {
   my ($cmd) = @_;
 
-  print "Executing : $cmd\n";
+  print "SLURM:execute_command(): Executing : $cmd\n";
   my $return_value;
 
   my ($stdout, $stderr, @result) = Capture::Tiny::capture (sub {
       $return_value = timeout( sub {system($cmd)}, 300 );
   });
+
+  if ( 0 ) { 
+    print "Perl DEBUGGING...\n"; 
+    print "RETURN VALUE: $return_value\n"; 
+    print "STDERR: $stderr\n"; 
+    print "STDOUT: ".join("\n",@result)."\n"; 
+    my @bla = split /\n/, $stdout;  
+    print join("\n", @bla)."\n";
+  }
 
   if ($return_value) {
      die sprintf("ERROR !!! Could not run '%s', got %s\nSTDERR %s\n", $cmd, $return_value, $stderr) ;
@@ -578,6 +632,8 @@ sub get_current_worker_process_id {
 sub get_cause_of_death { 
    my ($state) = @_;   
 
+   print "STATE: $state\n"; 
+
     my %slurm_status_2_cod = (
        'TIMEOUT'           => 'RUNLIMIT',
        'FAILED'            => 'CONTAMINATED',
@@ -586,10 +642,38 @@ sub get_cause_of_death {
     );
     my $cod = $slurm_status_2_cod{$state} ;  
     unless ( $cod ) { 
+       print "DEBUG: Weird job state: $state - setting status to UNKNOWN\n";
        $cod = "UNKNOWN" ; 
     }  
     return $cod; 
 }
+
+
+=head convert_to_seconds(dd-hh:mm:sec); 
+
+   Args:       : String describing time in sacct format 
+   Description : Translates slurm time string into raw seconds for elapsed time 
+   Exception   : None 
+   Returntype  : String
+   Example     :  
+                 - convert_to_seconds(5-01:59:33); 
+                 - convert_to_seconds(01:59:33); 
+=cut 
+
+
+sub convert_time_to_seconds {
+ my ($string) = @_;
+ my $days = 0;
+ my $hr_min_sec = $string; ;
+
+  if ( $string =~ m/-/ ) {
+     ($days, $hr_min_sec) = split /\-/,$string;
+  }
+
+   my ($hr,$min,$sec) = split /:/,$hr_min_sec;
+   return  $days * 24 * 60 * 60 +   $hr*60*60 + $min*60 + $sec ;
+}
+
 
 
 1;
