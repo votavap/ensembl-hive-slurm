@@ -417,8 +417,6 @@ sub parse_report_source_line {
 
           my $cause_of_death = get_cause_of_death($state); 
 
-          print "CAuse of thead: $cause_of_death ($state)\n"; 
- 
           $report_entry{ $job_id } = {
              # entries for 'worker' table:
                 'cause_of_death'    => $cause_of_death, 
