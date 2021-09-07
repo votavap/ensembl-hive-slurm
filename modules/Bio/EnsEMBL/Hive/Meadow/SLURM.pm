@@ -11,7 +11,7 @@
 =head1 Compatibility 
    
 
-    Module version 5.3 is compatible with SLURM version 17.11.11 and eHive Meadow v5.3
+    Module version 5.3 is compatible with SLURM version 19.05.7 and eHive Meadow v5.3
 
 
 =head1 LICENSE
